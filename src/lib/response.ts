@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { FILES_DIR } from './config';
 import { log } from './logging';
+import { collectOutgoingFiles } from './file-security';
 
 export const LONG_RESPONSE_THRESHOLD = 4000;
 
@@ -30,13 +31,10 @@ export function handleLongResponse(
 }
 
 /**
- * Collect files from a response text.
+ * Collect only regular files under the designated exchange directory.
+ * Agent-emitted paths are untrusted; they must never be able to attach
+ * unrelated host files or escape via symlinks.
  */
 export function collectFiles(response: string, fileSet: Set<string>): void {
-    const fileRegex = /\[send_file:\s*([^\]]+)\]/g;
-    let match: RegExpExecArray | null;
-    while ((match = fileRegex.exec(response)) !== null) {
-        const filePath = match[1].trim();
-        if (fs.existsSync(filePath)) fileSet.add(filePath);
-    }
+    collectOutgoingFiles(response, fileSet, FILES_DIR);
 }

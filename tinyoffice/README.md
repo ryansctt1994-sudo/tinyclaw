@@ -63,6 +63,15 @@ npm run start
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint
 
+## Backend API network boundary
+
+The TinyClaw backend has **no built-in user authentication**. It binds to `127.0.0.1:3777` by default. Keep the API local unless you have separately configured a trusted reverse proxy with authentication and transport security.
+
+- `TINYCLAW_API_HOST` may explicitly change the bind address. Setting `0.0.0.0` exposes an unauthenticated control plane to reachable network clients; avoid this without an independent access boundary.
+- Browser requests are accepted from `http://localhost:3000` and `http://127.0.0.1:3000` by default, to support TinyOffice.
+- `TINYCLAW_ALLOWED_ORIGINS` permits explicitly listing additional browser origins as a comma-separated value, e.g. `https://office.example`. This is a browser-origin restriction, **not authentication**.
+- Local CLI and channel clients without an `Origin` header remain supported; process-level and local-machine protections are still necessary.
+
 ## API Endpoints Used
 
 TinyOffice calls TinyClaw API endpoints such as:

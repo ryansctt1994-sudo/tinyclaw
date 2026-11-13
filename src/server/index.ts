@@ -14,6 +14,7 @@ import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Conversation } from '../lib/types';
 import { log } from '../lib/logging';
 import { addSSEClient, removeSSEClient } from './sse';
+import { allowedBrowserOrigins, isBrowserOriginAllowed, apiHost } from './security';
 
 import messagesRoutes from './routes/messages';
 import agentsRoutes from './routes/agents';
@@ -38,8 +39,17 @@ export function startApiServer(
 ): http.Server {
     const app = new Hono();
 
-    // CORS middleware
-    app.use('/*', cors());
+    // Reject unapproved browser origins before handling requests. Restricting
+    // CORS headers alone would not block simple cross-site requests.
+    const origins = allowedBrowserOrigins();
+    app.use('/*', async (c, next) => {
+        const origin = c.req.header('Origin');
+        if (!isBrowserOriginAllowed(origin, origins)) {
+            return c.json({ error: 'Browser origin not allowed' }, 403);
+        }
+        await next();
+    });
+    app.use('/*', cors({ origin: (origin) => origins.has(origin) ? origin : '' }));
 
     // Mount route modules
     app.route('/', messagesRoutes);
@@ -54,12 +64,17 @@ export function startApiServer(
     // SSE endpoint — needs raw Node.js response for streaming
     app.get('/api/events/stream', (c) => {
         const nodeRes = (c.env as { outgoing: http.ServerResponse }).outgoing;
-        nodeRes.writeHead(200, {
+        const headers: Record<string, string> = {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
-        });
+        };
+        const origin = c.req.header('Origin');
+        if (origin && origins.has(origin)) {
+            headers['Access-Control-Allow-Origin'] = origin;
+            headers['Vary'] = 'Origin';
+        }
+        nodeRes.writeHead(200, headers);
         nodeRes.write(`event: connected\ndata: ${JSON.stringify({ timestamp: Date.now() })}\n\n`);
         addSSEClient(nodeRes);
         nodeRes.on('close', () => removeSSEClient(nodeRes));
@@ -77,11 +92,16 @@ export function startApiServer(
         return c.json({ error: 'Internal server error' }, 500);
     });
 
+    const hostname = apiHost();
     const server = serve({
         fetch: app.fetch,
         port: API_PORT,
+        hostname,
     }, () => {
-        log('INFO', `API server listening on http://localhost:${API_PORT}`);
+        log('INFO', `API server listening on http://${hostname}:${API_PORT}`);
+        if (!['127.0.0.1', 'localhost', '::1'].includes(hostname)) {
+            log('WARN', 'API bound beyond loopback; restrict network access and require external authentication');
+        }
     });
 
     return server as unknown as http.Server;

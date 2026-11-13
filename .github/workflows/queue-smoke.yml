@@ -8,6 +8,7 @@ on:
       - 'src/lib/config.ts'
       - 'src/lib/invoke.ts'
       - 'src/lib/provider-policy.ts'
+      - 'src/lib/execution-receipt.ts'
       - 'tests/**'
       - 'package.json'
       - 'package-lock.json'
@@ -32,4 +33,4 @@ jobs:
       - name: Credential-free queue and attachment checks
         env:
           NODE_ENV: test
-        run: node --test tests/queue-smoke.test.cjs tests/provider-boundary.test.cjs tests/queue-burst.test.cjs tests/provider-command-limits.test.cjs tests/queue-wal-multiprocess.test.cjs
+        run: node --test tests/queue-smoke.test.cjs tests/provider-boundary.test.cjs tests/queue-burst.test.cjs tests/provider-command-limits.test.cjs tests/queue-wal-multiprocess.test.cjs tests/execution-receipt.test.cjs tests/receipt-vertical-slice.test.cjs

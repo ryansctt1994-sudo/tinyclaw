@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { FILES_DIR } from './config';
 import { log } from './logging';
 
@@ -18,9 +19,9 @@ export function handleLongResponse(
     }
 
     // Save full response as a .md file
-    const filename = `response_${Date.now()}.md`;
+    const filename = `response_${Date.now()}_${randomUUID()}.md`;
     const filePath = path.join(FILES_DIR, filename);
-    fs.writeFileSync(filePath, response);
+    fs.writeFileSync(filePath, response, { flag: 'wx' });
     log('INFO', `Long response (${response.length} chars) saved to ${filename}`);
 
     // Truncate to preview

@@ -8,6 +8,7 @@ const { spawn } = require('node:child_process');
 const home = process.env.TINYCLAW_HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'tinyclaw-smoke-'));
 process.env.TINYCLAW_HOME = home;
 fs.mkdirSync(path.join(home, 'files'), {recursive:true});
+fs.mkdirSync(path.join(home, 'logs'), {recursive:true});
 const db = require('../dist/lib/db.js');
 
 if (process.argv.includes('--claim-worker')) {

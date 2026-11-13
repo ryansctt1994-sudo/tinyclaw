@@ -6,6 +6,7 @@ import { SCRIPT_DIR, resolveClaudeModel, resolveCodexModel, resolveOpenCodeModel
 import { log } from './logging';
 import { ensureAgentDirectory, updateAgentTeammates } from './agent';
 import { buildCodexArgs, buildClaudeArgs, assertOpenCodeAuthorized } from './provider-policy';
+import { buildWorkerEnvironment } from './worker-environment';
 
 export interface CommandLimits {
     timeoutMs?: number;
@@ -28,6 +29,7 @@ export async function runCommand(
     return new Promise((resolve, reject) => {
         const child = spawn(command, args, {
             cwd: cwd || SCRIPT_DIR,
+            env: buildWorkerEnvironment(),
             stdio: ['ignore', 'pipe', 'pipe'],
         });
         let stdout = '';

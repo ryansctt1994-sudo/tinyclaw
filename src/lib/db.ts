@@ -86,6 +86,8 @@ export function initQueueDb(): void {
     db = new Database(QUEUE_DB_PATH);
     db.pragma('journal_mode = WAL');
     db.pragma('busy_timeout = 5000');
+    // Durable WAL commits for replay admission; not a guarantee of external effect atomicity.
+    db.pragma('synchronous = FULL');
 
     db.exec(`
         CREATE TABLE IF NOT EXISTS messages (
@@ -122,6 +124,11 @@ export function initQueueDb(): void {
             acked_at INTEGER
         );
 
+        CREATE TABLE IF NOT EXISTS execution_admissions (
+            execution_id TEXT NOT NULL PRIMARY KEY,
+            admitted_at_ms INTEGER NOT NULL
+        ) WITHOUT ROWID;
+
         CREATE INDEX IF NOT EXISTS idx_messages_status_agent_created
             ON messages(status, agent, created_at);
         CREATE INDEX IF NOT EXISTS idx_responses_channel_status ON responses(channel, status);
@@ -136,6 +143,31 @@ export function initQueueDb(): void {
 function getDb(): Database.Database {
     if (!db) throw new Error('Queue DB not initialized — call initQueueDb() first');
     return db;
+}
+
+// ── Execution identity admission (WP-002) ──────────────────────────────────
+
+/**
+ * Atomically admit one execution identity to the durable WAL replay ledger.
+ *
+ * Input is the 128-bit lower-hex attempt ID from execution-receipt.ts.
+ * Returns false for an already committed identity; any other database error
+ * propagates (fail closed). No existing queue or external provider is invoked.
+ *
+ * This is at-most-one admission, not exactly-once external side effects.
+ * Admission and external effects are not one atomic transaction.
+ */
+export function admitExecution(executionId: string): boolean {
+    if (typeof executionId !== 'string' || !/^[0-9a-f]{32}$/.test(executionId)) {
+        throw new Error('Invalid execution identity: expected 32 lowercase hexadecimal characters');
+    }
+    const d = getDb();
+    const admit = d.transaction(() => d.prepare(`
+        INSERT INTO execution_admissions(execution_id, admitted_at_ms)
+        VALUES (?, ?)
+        ON CONFLICT(execution_id) DO NOTHING
+    `).run(executionId, Date.now()).changes === 1);
+    return admit.immediate();
 }
 
 // ── Messages (incoming queue) ────────────────────────────────────────────────

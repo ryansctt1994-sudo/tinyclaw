@@ -5,6 +5,7 @@ import { AgentConfig, TeamConfig } from './types';
 import { SCRIPT_DIR, resolveClaudeModel, resolveCodexModel, resolveOpenCodeModel } from './config';
 import { log } from './logging';
 import { ensureAgentDirectory, updateAgentTeammates } from './agent';
+import { buildCodexArgs, buildClaudeArgs, assertOpenCodeAuthorized } from './provider-policy';
 
 export async function runCommand(command: string, args: string[], cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -86,14 +87,7 @@ export async function invokeAgent(
         }
 
         const modelId = resolveCodexModel(agent.model);
-        const codexArgs = ['exec'];
-        if (shouldResume) {
-            codexArgs.push('resume', '--last');
-        }
-        if (modelId) {
-            codexArgs.push('--model', modelId);
-        }
-        codexArgs.push('--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '--json', message);
+        const codexArgs = buildCodexArgs(modelId, message, shouldResume);
 
         const codexOutput = await runCommand('codex', codexArgs, workingDir);
 
@@ -113,6 +107,7 @@ export async function invokeAgent(
 
         return response || 'Sorry, I could not generate a response from Codex.';
     } else if (provider === 'opencode') {
+        assertOpenCodeAuthorized();
         // OpenCode CLI — non-interactive mode via `opencode run`.
         // Outputs JSONL with --format json; extract "text" type events for the response.
         // Model passed via --model in provider/model format (e.g. opencode/claude-sonnet-4-5).
@@ -163,14 +158,7 @@ export async function invokeAgent(
         }
 
         const modelId = resolveClaudeModel(agent.model);
-        const claudeArgs = ['--dangerously-skip-permissions'];
-        if (modelId) {
-            claudeArgs.push('--model', modelId);
-        }
-        if (continueConversation) {
-            claudeArgs.push('-c');
-        }
-        claudeArgs.push('-p', message);
+        const claudeArgs = buildClaudeArgs(modelId, message, continueConversation);
 
         return await runCommand('claude', claudeArgs, workingDir);
     }

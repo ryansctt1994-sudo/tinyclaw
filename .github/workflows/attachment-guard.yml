@@ -1,0 +1,28 @@
+name: TinyClaw attachment guard
+
+on:
+  pull_request:
+    paths:
+      - 'src/lib/file-security.ts'
+      - 'src/lib/response.ts'
+      - 'tests/file-security.test.cjs'
+      - '.github/workflows/attachment-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  containment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Focused filesystem containment regressions
+        run: node --experimental-strip-types --test tests/file-security.test.cjs
+      - name: Install dependencies without postinstall/browser downloads
+        run: npm ci --ignore-scripts
+      - name: TypeScript build
+        run: npm run build

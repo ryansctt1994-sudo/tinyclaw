@@ -7,39 +7,83 @@ import { log } from './logging';
 import { ensureAgentDirectory, updateAgentTeammates } from './agent';
 import { buildCodexArgs, buildClaudeArgs, assertOpenCodeAuthorized } from './provider-policy';
 
-export async function runCommand(command: string, args: string[], cwd?: string): Promise<string> {
+export interface CommandLimits {
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+}
+
+/**
+ * Bound unattended provider CLI execution. Limits apply to the direct CLI
+ * process only; do not assume child process trees are safely isolated.
+ */
+export async function runCommand(
+    command: string, args: string[], cwd?: string, limits: CommandLimits = {}
+): Promise<string> {
+    const timeoutMs = limits.timeoutMs ?? (10 * 60 * 1000);
+    const maxOutputBytes = limits.maxOutputBytes ?? (8 * 1024 * 1024);
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 ||
+        !Number.isSafeInteger(maxOutputBytes) || maxOutputBytes <= 0) {
+        throw new Error('Invalid provider command limits');
+    }
     return new Promise((resolve, reject) => {
         const child = spawn(command, args, {
             cwd: cwd || SCRIPT_DIR,
             stdio: ['ignore', 'pipe', 'pipe'],
         });
-
         let stdout = '';
         let stderr = '';
+        let capturedBytes = 0;
+        let failure: Error | null = null;
+        let killTimer: NodeJS.Timeout | null = null;
+
+        function terminate(reason: string): void {
+            if (failure) return;
+            failure = new Error(reason);
+            child.kill('SIGTERM');
+            killTimer = setTimeout(() => child.kill('SIGKILL'), 2000);
+            killTimer.unref();
+        }
+
+        const timer = setTimeout(
+            () => terminate(`Provider command exceeded ${timeoutMs}ms deadline`),
+            timeoutMs
+        );
+        timer.unref();
 
         child.stdout.setEncoding('utf8');
         child.stderr.setEncoding('utf8');
-
         child.stdout.on('data', (chunk: string) => {
-            stdout += chunk;
-        });
-
-        child.stderr.on('data', (chunk: string) => {
-            stderr += chunk;
-        });
-
-        child.on('error', (error) => {
-            reject(error);
-        });
-
-        child.on('close', (code) => {
-            if (code === 0) {
-                resolve(stdout);
+            if (failure) return;
+            capturedBytes += Buffer.byteLength(chunk, 'utf8');
+            if (capturedBytes > maxOutputBytes) {
+                terminate('Provider command exceeded combined output byte limit');
                 return;
             }
-
-            const errorMessage = stderr.trim() || `Command exited with code ${code}`;
-            reject(new Error(errorMessage));
+            stdout += chunk;
+        });
+        child.stderr.on('data', (chunk: string) => {
+            if (failure) return;
+            capturedBytes += Buffer.byteLength(chunk, 'utf8');
+            if (capturedBytes > maxOutputBytes) {
+                terminate('Provider command exceeded combined output byte limit');
+                return;
+            }
+            stderr += chunk;
+        });
+        child.on('error', (error) => {
+            failure = error;
+        });
+        child.on('close', (code) => {
+            clearTimeout(timer);
+            if (killTimer) clearTimeout(killTimer);
+            if (failure) {
+                reject(failure);
+            } else if (code === 0) {
+                resolve(stdout);
+            } else {
+                reject(new Error(stderr.trim().slice(0, 4096) ||
+                    `Command exited with code ${code}`));
+            }
         });
     });
 }

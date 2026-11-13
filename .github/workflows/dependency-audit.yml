@@ -1,0 +1,30 @@
+name: Production Dependency Security Audit
+
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/npm-audit-gate.cjs'
+      - 'tests/npm-audit-gate.test.cjs'
+      - '.github/workflows/dependency-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exercise the audit decision logic
+        run: node --test tests/npm-audit-gate.test.cjs
+      - name: Query npm advisory database (production packages only)
+        run: npm audit --omit=dev --json > /tmp/tinyclaw-npm-audit.json || true
+      - name: Summarize vulnerabilities and block high/critical findings
+        run: node scripts/npm-audit-gate.cjs /tmp/tinyclaw-npm-audit.json
